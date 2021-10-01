@@ -38,7 +38,7 @@ while (TRUE)
 
 final class Ship
 {
-    private const MAX_VERTICAL_LANDING_SPEED = 40;
+    private const MAX_VERTICAL_LANDING_SPEED = 32;
     private const MAX_HORIZONTAL_LANDING_SPEED = 20;
     private const GRAVITY = 3.711;
     private const MIN_THRUST = 0;
@@ -78,12 +78,22 @@ final class Ship
         $this->thrust = $thrust;
     }
 
+    private function getNextPosition(): Coordinate
+    {
+        return $this->position->subtract(new Coordinate($this->horizontalSpeed, $this->verticalSpeed));
+    }
+
+    private function getNextVerticalSpeed(): float
+    {
+        return $this->verticalSpeed + self::GRAVITY - $this->thrust;
+    }
+
     public function __toString(): string
     {
         $desiredThrust = self::MIN_THRUST;
 
         $landingSpot = Terrain::currentLandingSpot($this);
-        $distanceToLanding = $this->position->subtract(new Coordinate($this->horizontalSpeed, $this->verticalSpeed))->distanceTo($landingSpot);
+        $distanceToLanding = $this->getNextPosition()->distanceTo($landingSpot);
         error_log('Dist:' . $distanceToLanding);
         if ($distanceToLanding > 0) {
             $maxLift = self::MAX_THRUST - self::GRAVITY;
@@ -95,10 +105,16 @@ final class Ship
                     range($this->thrust + 1, self::MAX_THRUST - 1)
                 )
             );
-            $verticalOverspeed = -1 * $this->verticalSpeed - $rampUp;
+            $nextVerticalSpeed = $this->getNextVerticalSpeed();
+            $verticalOverspeed = -1 * $nextVerticalSpeed - $rampUp - self::MAX_VERTICAL_LANDING_SPEED;
+            $turnsTillOverspeed0 = ceil($verticalOverspeed / $maxLift);
+            $turnsTillLandingSpot = ceil($distanceToLanding / ($verticalOverspeed + self::MAX_VERTICAL_LANDING_SPEED));
             error_log('Vertical overspeed:' . $verticalOverspeed);
+            error_log('Turns till overspeed 0:' . $turnsTillOverspeed0);
+            error_log('Turns till landing spot:' . $turnsTillLandingSpot);
 
-            if ($verticalOverspeed > self::MAX_VERTICAL_LANDING_SPEED) {
+            if ($turnsTillOverspeed0 > $turnsTillLandingSpot) {
+                // Initiate suicide burn
                 $desiredThrust = 4;
             }
         }
