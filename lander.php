@@ -38,11 +38,14 @@ while (TRUE)
 
 final class Ship
 {
-    private const MAX_VERTICAL_LANDING_SPEED = 32;
-    private const MAX_HORIZONTAL_LANDING_SPEED = 20;
+    private const MAX_VERTICAL_LANDING_SPEED = 20;
+    private const MAX_HORIZONTAL_LANDING_SPEED = 10;
+    private const MAX_HORIZONTAL_SPEED = 40;
     private const GRAVITY = 3.711;
     private const MIN_THRUST = 0;
     private const MAX_THRUST = 4;
+    private const MAX_HOVER_ANGLE = 22;
+    private const MAX_ANGLE = self::MAX_HOVER_ANGLE * 1;
 
     /** @var Coordinate */
     private $position;
@@ -92,9 +95,40 @@ final class Ship
     {
         $desiredThrust = self::MIN_THRUST;
 
+        $landingZone = Terrain::getLandingZone();
+        $landingTarget = $landingZone->getCenter();
         $landingSpot = Terrain::currentLandingSpot($this);
-        $distanceToLanding = $this->getNextPosition()->distanceTo($landingSpot);
+        $nextPosition = $this->getNextPosition();
+        error_log($landingSpot);
+        $distanceToLanding = $nextPosition->distanceTo($landingSpot);
+        $translateDistance = $nextPosition->distanceTo(new Coordinate($landingTarget->getX(), $nextPosition->getY()));
         error_log('Dist:' . $distanceToLanding);
+        error_log($this->position);
+        error_log($landingTarget);
+        $angle = 0;
+        if ($this->position->getX() > $landingZone->getEnd()->getX()) {
+            $desiredThrust = self::MAX_THRUST;
+            $angle = self::MAX_HOVER_ANGLE;
+        } elseif ($this->position->getX() < $landingZone->getStart()->getX()) {
+            $desiredThrust = self::MAX_THRUST;
+            $angle = self::MAX_HOVER_ANGLE * -1;
+        }
+        error_log(abs($this->horizontalSpeed));
+        error_log(abs($translateDistance)/abs($this->horizontalSpeed));
+        error_log(abs($translateDistance));
+        if (abs($this->horizontalSpeed) >= abs($translateDistance)/abs($this->horizontalSpeed) || ($angle === 0 && abs($this->horizontalSpeed) > self::MAX_HORIZONTAL_LANDING_SPEED)) {
+            $angle = self::MAX_ANGLE * ($this->horizontalSpeed > 0 ? 1 : -1);
+            $desiredThrust = self::MAX_THRUST;
+        }
+        if (abs($this->horizontalSpeed) < self::MAX_HORIZONTAL_LANDING_SPEED
+            && (
+                $nextPosition->getX() > $landingZone->getStart()->getX() && $nextPosition->getX() < $landingZone->getEnd()->getX()
+                || $distanceToLanding < 250
+            )
+        ) {
+            $angle = 0;
+        }
+
         if ($distanceToLanding > 0) {
             $maxLift = self::MAX_THRUST - self::GRAVITY;
             $rampUp = $this->thrust >= self::MAX_THRUST - 1 ? 0 : array_sum(
@@ -119,8 +153,12 @@ final class Ship
             }
         }
 
+        // prevent going up again
+        if ($desiredThrust > 0 && $this->verticalSpeed >= 0) {
+            --$desiredThrust;
+        }
 
-        return '0 ' . $desiredThrust . PHP_EOL;
+        return $angle . ' ' . $desiredThrust . PHP_EOL;
     }
 
     public function getPosition(): Coordinate
@@ -150,7 +188,7 @@ final class Terrain
         self::$landingZone = new Line(new Coordinate(0,0), new Coordinate(0,0));
         foreach (self::$coordinates as $coordinate) {
             if ($coordinate->equalY(self::$landingZone->getStart())) {
-                self::$landingZone->drawTo($coordinate);
+                self::$landingZone->drawTo($coordinate->subtract(new Coordinate(100, $coordinate->getY())));
             }
 
             if (self::$landingZone->isPoint()) {
@@ -159,6 +197,11 @@ final class Terrain
                 break;
             }
         }
+
+        self::$landingZone = new Line(
+            new Coordinate(self::$landingZone->getStart()->getX() + 250, self::$landingZone->getStart()->getY()),
+            new Coordinate(self::$landingZone->getEnd()->getX() - 250, self::$landingZone->getEnd()->getY()),
+        );
 
         return self::getLandingZone();
     }
@@ -222,6 +265,11 @@ final class Line
     public function isPoint(): bool
     {
         return $this->start->equals($this->end);
+    }
+
+    public function getCenter(): Coordinate
+    {
+        return $this->end->add($this->start)->multiplyByFactor(0.5);
     }
 
     public function getIntersection(self $line): Coordinate
